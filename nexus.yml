@@ -1,0 +1,38 @@
+
+name: Nexus Blaine Watcher
+
+on:
+  schedule:
+    # GitHub Actions minimum interval is every 5 minutes
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run watcher
+        env:
+          # Date include-only window for October 2025
+          INCLUDE_START: "2025-10-01"
+          INCLUDE_END: "2025-10-31"
+          # Twilio WhatsApp (store sensitive values as repo secrets)
+          TWILIO_SID: "${{ secrets.TWILIO_SID }}"
+          TWILIO_TOKEN: "${{ secrets.TWILIO_TOKEN }}"
+          WHATSAPP_FROM: "whatsapp:+14155238886"   # Twilio Sandbox; replace if you have a WA-enabled number
+          WHATSAPP_TO:   "whatsapp:+1YOURNUMBER"   # your phone number with country code
+          # Optional: Telegram / Email envs can also be set here via secrets
+        run: |
+          python nexus_blaine_watcher.py
