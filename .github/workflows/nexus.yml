@@ -27,7 +27,7 @@ jobs:
         env:
           # Date include-only window for October 2025
           INCLUDE_START: "2025-10-01"
-          INCLUDE_END: "2025-10-31"
+          INCLUDE_END: "2026-10-31"
           # Twilio WhatsApp (store sensitive values as repo secrets)
           TWILIO_SID: "${{ secrets.TWILIO_SID }}"
           TWILIO_TOKEN: "${{ secrets.TWILIO_TOKEN }}"
