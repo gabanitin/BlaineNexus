@@ -51,7 +51,7 @@ STATE_FILE = os.getenv("STATE_FILE", str(Path.home() / ".nexus_blaine_state.json
 # ---------- END CONFIG ----------
 
 API_URL = "https://ttp.cbp.dhs.gov/schedulerapi/slots?orderBy=soonest&limit={limit}&locationId={loc}&minimum=1"
-SCHEDULER_UI = "https://ttp.cbp.dhs.gov/schedulerui/schedule-interview/location?service=NH&vo=true"
+SCHEDULER_UI = "https://ttp.cbp.dhs.gov/"
 
 def parse_iso(dt_str: str) -> datetime:
     return datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
