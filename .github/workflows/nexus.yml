@@ -1,11 +1,11 @@
-
 name: Nexus Blaine Watcher
 
 on:
   schedule:
-    # GitHub Actions minimum interval is every 5 minutes
-    - cron: "*/5 * * * *"
-  workflow_dispatch: {}
+    - cron: "*/5 * * * *"        # optional (keeps 5-min backup schedule)
+  repository_dispatch:
+    types: [ping]                # <— listens for our external trigger
+  workflow_dispatch: {}          # manual Run workflow button
 
 jobs:
   run:
