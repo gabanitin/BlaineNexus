@@ -12,7 +12,7 @@ jobs:
           TWILIO_SID:    ${{ secrets.TWILIO_SID }}
           TWILIO_TOKEN:  ${{ secrets.TWILIO_TOKEN }}
           WHATSAPP_FROM: "whatsapp:+14155238886"  # sandbox sender (or your WA-enabled number)
-          WHATSAPP_TO:   "whatsapp:+1YOURNUMBER"  # your phone
+          WHATSAPP_TO:   "whatsapp:+16049615235"  # your phone
         run: |
           set -euo pipefail
           basic_auth=$(printf "%s:%s" "$TWILIO_SID" "$TWILIO_TOKEN" | base64)
