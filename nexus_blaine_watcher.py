@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-NEXUS Blaine watcher → SMS alerts via Twilio (no external deps).
+NEXUS Blaine watcher → SMS alerts via Twilio (no external deps, trial-safe message length).
 
 Env vars (set in the workflow):
   INCLUDE_START: YYYY-MM-DD  (e.g., 2026-02-01)
@@ -10,18 +10,17 @@ Env vars (set in the workflow):
 
   TWILIO_SID:    Twilio Account SID (ACxxxxxxxx)
   TWILIO_TOKEN:  Twilio Auth Token
-  SMS_FROM:      Your SMS-capable Twilio number, e.g. +12298002359  (NO 'whatsapp:' prefix)
+  SMS_FROM:      Your SMS-capable Twilio number, e.g. +12298002359
   SMS_TO:        One or many recipients, comma-separated, e.g. +1604..., +1778...
 
 Behavior:
  - Fetches available slots from the public TTP scheduler API.
  - Filters to your date window (UTC).
- - Sends one SMS when NEW results appear (hash-based dedupe).
- - Exits quickly on errors (keeps Actions runtime low).
+ - Sends one SMS when NEW results appear (shortened for Twilio trial).
 """
 
 import os, json, base64, urllib.request, urllib.parse, urllib.error, hashlib
-from datetime import datetime, date, timedelta, timezone
+from datetime import datetime, date, timezone
 
 # -------------------- CONFIG --------------------
 API_URL = "https://ttp.cbp.dhs.gov/schedulerapi/slots?orderBy=soonest&limit={limit}&locationId={loc}&minimum=1"
@@ -30,7 +29,6 @@ INCLUDE_START = os.getenv("INCLUDE_START", "2026-02-01")
 INCLUDE_END   = os.getenv("INCLUDE_END",   "2026-02-28")
 LOCATION_ID   = os.getenv("LOCATION_ID",   "5020")  # Blaine
 LIMIT         = int(os.getenv("LIMIT", "50"))
-
 STATE_FILE    = os.getenv("STATE_FILE", "/tmp/nexus_state.json")
 
 # Twilio (SMS)
@@ -39,171 +37,115 @@ TWILIO_TOKEN = os.getenv("TWILIO_TOKEN", "")
 SMS_FROM     = os.getenv("SMS_FROM", "")  # +1...
 SMS_TO_RAW   = os.getenv("SMS_TO", "")    # +1..., +1...
 
-# --------------- UTILITIES ----------------------
+# --------------- HELPERS ----------------------
+
+def shorten_for_trial(msg, limit=155):
+    """Trim message to fit Twilio trial SMS limit (~160 chars)."""
+    msg = " ".join(msg.split())  # collapse newlines/spaces
+    return msg[:limit]
+
 def _iso_to_dt(s: str) -> datetime:
-    # Accepts 'YYYY-MM-DDTHH:MM' or '...Z' or '...+00:00'
     s = s.replace("Z", "+00:00")
     try:
         return datetime.fromisoformat(s)
     except ValueError:
-        # last resort: strip seconds if present
-        try:
-            return datetime.fromisoformat(s[:16])
-        except Exception:
-            raise
+        return datetime.fromisoformat(s[:16])
 
 def http_get_json(url: str):
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     try:
         with urllib.request.urlopen(req, timeout=8) as r:
             body = r.read().decode("utf-8", "ignore")
-        if not body or body[0] not in "[{":
-            print("[fetch] non-JSON response")
-            return []
-        return json.loads(body)
-    except urllib.error.HTTPError as e:
-        print("[fetch] HTTP", e.code)
-        return []
+        return json.loads(body) if body.strip().startswith("[") else []
     except Exception as e:
-        print("[fetch] error", e)
+        print("[fetch error]", e)
         return []
 
 def load_state():
     try:
-        with open(STATE_FILE, "r") as f:
-            return json.load(f)
-    except Exception:
-        return {}
+        with open(STATE_FILE, "r") as f: return json.load(f)
+    except: return {}
 
 def save_state(state: dict):
     try:
-        with open(STATE_FILE, "w") as f:
-            json.dump(state, f)
-    except Exception:
-        pass
+        with open(STATE_FILE, "w") as f: json.dump(state, f)
+    except: pass
 
 def digest_slots(slots):
-    keylines = []
-    for s in slots:
-        # use utcStart datetime string as a stable key
-        keylines.append(f"{s.get('start')}|{s.get('end')}|{s.get('locationId')}")
-    return hashlib.sha256("\n".join(sorted(keylines)).encode()).hexdigest()
+    lines = [f"{s.get('start')}|{s.get('end')}|{s.get('locationId')}" for s in slots]
+    return hashlib.sha256("\n".join(sorted(lines)).encode()).hexdigest()
 
-def in_date_window(slot_dt: datetime, start_d: date, end_d: date) -> bool:
-    d = slot_dt.date()
-    return start_d <= d <= end_d
-
-def as_recipients(raw: str):
-    return [n.strip() for n in raw.split(",") if n.strip()]
+def as_recipients(raw: str): return [n.strip() for n in raw.split(",") if n.strip()]
 
 def notify_sms(message: str):
-    sid, token = TWILIO_SID, TWILIO_TOKEN
-    from_ = SMS_FROM
+    sid, token, from_ = TWILIO_SID, TWILIO_TOKEN, SMS_FROM
     to_list = as_recipients(SMS_TO_RAW)
     if not (sid and token and from_ and to_list):
-        print("[sms] missing env (TWILIO_SID/TWILIO_TOKEN/SMS_FROM/SMS_TO)")
+        print("[sms] missing env vars")
         return
-
     auth = base64.b64encode(f"{sid}:{token}".encode()).decode()
     url = f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json"
-
+    msg = shorten_for_trial(message)
     for to in to_list:
-        data = urllib.parse.urlencode({
-            "From": from_,
-            "To": to,
-            "Body": message,
-        }).encode("utf-8")
-        req = urllib.request.Request(
-            url, data=data, method="POST",
+        data = urllib.parse.urlencode({"From": from_, "To": to, "Body": msg}).encode()
+        req = urllib.request.Request(url, data=data, method="POST",
             headers={
                 "Authorization": f"Basic {auth}",
                 "Content-Type": "application/x-www-form-urlencoded",
-                "User-Agent": "Mozilla/5.0",
-            },
-        )
+            })
         try:
             with urllib.request.urlopen(req, timeout=8) as r:
-                print(f"[sms] ok {to} ({r.status})")
+                print(f"[sms ok] {to} ({r.status})")
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", "ignore")
-            print(f"[sms] fail {to} {e.code} {body[:300]}")
+            print(f"[sms fail] {to} {e.code} {body[:200]}")
         except Exception as e:
-            print(f"[sms] error {to}: {e}")
+            print(f"[sms error] {to}: {e}")
 
 # --------------- MAIN --------------------------
 def main():
-    # Parse date window (treat as UTC dates)
     try:
         start_d = datetime.strptime(INCLUDE_START, "%Y-%m-%d").date()
-        end_d   = datetime.strptime(INCLUDE_END,   "%Y-%m-%d").date()
+        end_d   = datetime.strptime(INCLUDE_END, "%Y-%m-%d").date()
     except Exception as e:
-        print("[config] bad INCLUDE_START/END", e)
+        print("[config error]", e)
         return 1
 
     url = API_URL.format(limit=LIMIT, loc=LOCATION_ID)
     print("[watcher] GET", url)
     data = http_get_json(url)
-
     if not isinstance(data, list):
-        print("[watcher] unexpected payload type")
-        return 0
+        print("[watcher] bad payload"); return 0
 
-    # Normalize slots: many deployments use 'start' or 'startTimestamp'
     norm = []
     for s in data:
-        start_raw = s.get("start") or s.get("startTimestamp") or s.get("startTime")
-        end_raw   = s.get("end")   or s.get("endTimestamp")   or s.get("endTime")
-        if not start_raw:
-            continue
+        raw = s.get("start") or s.get("startTimestamp") or s.get("startTime")
+        if not raw: continue
         try:
-            dt = _iso_to_dt(start_raw)
-        except Exception:
-            continue
-        # Assume timestamps are UTC if offset is present; otherwise set UTC
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = _iso_to_dt(raw)
+        except Exception: continue
+        if dt.tzinfo is None: dt = dt.replace(tzinfo=timezone.utc)
+        if start_d <= dt.date() <= end_d:
+            norm.append({"start": raw, "locationId": s.get("locationId", LOCATION_ID)})
 
-        if in_date_window(dt.astimezone(timezone.utc), start_d, end_d):
-            norm.append({
-                "start": start_raw,
-                "end": end_raw,
-                "locationId": s.get("locationId", LOCATION_ID),
-            })
-
-    print(f"[watcher] total: {len(data)} | in-window: {len(norm)}")
-
-    if not norm:
-        print("[watcher] nothing in window; exit")
-        return 0
+    print(f"[watcher] total {len(data)}, in window {len(norm)}")
+    if not norm: return 0
 
     state = load_state()
     dg = digest_slots(norm)
     if dg == state.get("last_digest"):
-        print("[watcher] no change since last alert")
-        return 0
+        print("[watcher] no change"); return 0
 
-    # Build concise SMS (first handful of slots)
-    # Show up to 8 earliest
-    def _parse_dt(s):
+    earliest = sorted(norm, key=lambda s: s["start"])[:3]
+    lines = [f"🚨 NEXUS slots at Blaine ({INCLUDE_START}–{INCLUDE_END})"]
+    for s in earliest:
         try:
-            x = _iso_to_dt(s)
-            if x.tzinfo is None: x = x.replace(tzinfo=timezone.utc)
-            return x.astimezone(timezone.utc)
-        except Exception:
-            return None
+            dt = _iso_to_dt(s["start"])
+            lines.append(dt.strftime("%b %d %H:%M"))
+        except: pass
+    lines.append("https://ttp.cbp.dhs.gov/")
 
-    sorted_slots = sorted(norm, key=lambda s: _parse_dt(s["start"]) or datetime.max.replace(tzinfo=timezone.utc))[:8]
-    lines = ["🚨 NEXUS slots at Blaine (Feb 2026)"]
-    for s in sorted_slots:
-        dt = _parse_dt(s["start"])
-        if dt:
-            lines.append(dt.strftime("• %Y-%m-%d %H:%M UTC"))
-        else:
-            lines.append(f"• {s['start']}")
-    lines.append("Login: https://ttp.cbp.dhs.gov/")
-
-    notify_sms("\n".join(lines))
-
+    notify_sms(" | ".join(lines))
     state["last_digest"] = dg
     save_state(state)
     return 0
