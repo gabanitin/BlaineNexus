@@ -44,5 +44,5 @@ jobs:
           TWILIO_SID:    ${{ secrets.TWILIO_SID }}
           TWILIO_TOKEN:  ${{ secrets.TWILIO_TOKEN }}
           SMS_FROM:      "+12298002359"       # your Twilio SMS number
-          SMS_TO:        "+1YOURNUMBER"       # or "+1A,+1B" comma-separated
+          SMS_TO:        "+16049615235"       # or "+1A,+1B" comma-separated
         run: python nexus_blaine_watcher.py
