@@ -9,7 +9,7 @@ name: Nexus Blaine Watcher
     import os, base64, urllib.request, urllib.parse
     sid=os.getenv("TWILIO_SID"); tok=os.getenv("TWILIO_TOKEN")
     FROM="whatsapp:+14155238886"           # Twilio sandbox
-    TO="whatsapp:+1YOURNUMBER"             # your number with whatsapp: prefix
+    TO="whatsapp:+16049615235"             # your number with whatsapp: prefix
     AUTH=base64.b64encode(f"{sid}:{tok}".encode()).decode()
     data=urllib.parse.urlencode({"From":FROM,"To":TO,"Body":"Twilio ✅ test from GitHub Actions"}).encode()
     req=urllib.request.Request(f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json",
