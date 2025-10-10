@@ -32,7 +32,7 @@ jobs:
           # Twilio WhatsApp (store sensitive values as repo secrets)
           TWILIO_SID: "${{ secrets.TWILIO_SID }}"
           TWILIO_TOKEN: "${{ secrets.TWILIO_TOKEN }}"
-          WHATSAPP_FROM: "whatsapp:+14155238886"   # Twilio Sandbox; replace if you have a WA-enabled number
+          WHATSAPP_FROM: "whatsapp:+12298002359"   # Twilio Sandbox; replace if you have a WA-enabled number
           WHATSAPP_TO:   "whatsapp:+16049615235"   # your phone number with country code
           # Optional: Telegram / Email envs can also be set here via secrets
         run: |
