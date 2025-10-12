@@ -33,8 +33,8 @@ jobs:
       - name: Run watcher (SMS)
         env:
           # ---- Date window (February 2026) ----
-          INCLUDE_START: "2025-10-12"
-          INCLUDE_END:   "2025-10-12"
+          INCLUDE_START: "2025-10-11"
+          INCLUDE_END:   "2025-10-11"
 
           # ---- Blaine ----
           LOCATION_ID: "5020"
